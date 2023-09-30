@@ -134,14 +134,15 @@ def write_json_to_file(data, filename):
     with open(filename, "w") as json_file:
         json_file.write(json_data)
 
-# Uncomment to Collect Data on Every Anime Available on MyAnimeList
-#write_json_to_file(collect_anime_data(), 'data/anime.json')
+if __name__ == '__main__':
+    # Collect Data on Every Anime Available on MyAnimeList
+    write_json_to_file(collect_anime_data(), 'data/anime.json')
 
-# Uncomment to Collect a List of Usernames from the Jikan API
-#write_json_to_file(collect_usernames(), 'data/usernames.json')
+    # Collect a List of Usernames from the Jikan API
+    write_json_to_file(collect_usernames(), 'data/usernames.json')
 
-# Uncomment to Collect a List of User Anime List Data (Requires data/usernames.json file)
-#write_json_to_file(collect_anime_lists('data/usernames.json'), 'data/user_anime_lists.json')
+    # Collect a List of User Anime List Data (Requires data/usernames.json file)
+    write_json_to_file(collect_anime_lists('data/usernames.json'), 'data/user_anime_lists.json')
 
-# Uncomment to Print out How Many Anime Each User Has Watched (Requires data/user_anime_lists.json)
-#print_num_anime_in_anime_lists("data/user_anime_lists.json")
+    # Print out How Many Anime Each User Has Watched (Requires data/user_anime_lists.json)
+    print_num_anime_in_anime_lists("data/user_anime_lists.json")

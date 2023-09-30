@@ -90,18 +90,19 @@ def convert_user_anime_list_json_to_csv():
                                          anime_rating["list_status"].get("finish_date")])
             user_id += 1
 
-# Uncomment to Generate the Anime CSV file (Requires 'data/anime.json')
-#convert_anime_json_to_csv()
+if __name__ == '__main__':
+    # Generate the Anime CSV file (Requires 'data/anime.json')
+    convert_anime_json_to_csv()
 
-# Uncomment to Generate the User Ratings CSV file (Requires data/user_anime_lists.json)
-#convert_user_anime_list_json_to_csv()
+    # Generate the User Ratings CSV file (Requires data/user_anime_lists.json)
+    convert_user_anime_list_json_to_csv()
 
-# Uncomment to Check Basic Anime CSV Info
-#anime_df = pd.read_csv('data/anime.csv')
-#print(anime_df.sample(n=5))
-#print(anime_df.describe())
+    # Check Basic Anime CSV Info
+    anime_df = pd.read_csv('data/anime.csv')
+    print(anime_df.sample(n=5))
+    print(anime_df.describe())
 
-# Uncomment to Check Basic User Ratings CSV Info
-#user_ratings_df = pd.read_csv('data/user_ratings.csv')
-#print(user_ratings_df.sample(n=5))
-#print(user_ratings_df.describe())
+    # Check Basic User Ratings CSV Info
+    user_ratings_df = pd.read_csv('data/user_ratings.csv')
+    print(user_ratings_df.sample(n=5))
+    print(user_ratings_df.describe())
