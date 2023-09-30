@@ -75,6 +75,59 @@ def collect_usernames(num_pages=25):
         "usernames": usernames
     }
 
+def collect_anime_lists(json_file):
+    usernames = []
+    with open(json_file, 'r') as file:
+        json_data = json.load(file)
+        usernames = json_data["usernames"]
+    print(f'Num usernames found: {len(usernames)}')
+
+    anime_lists = []
+
+    for username in usernames:
+        anime_list_request: requests.Response = None
+        try:
+            anime_list_request = requests.get(f'{MY_ANIME_LIST_API_URL}/users/{username}/animelist?fields=list_status&status=completed&limit=1000', headers={'X-MAL-CLIENT-ID': CLIENT_ID})
+            time.sleep(API_REQUEST_DELAY * 2)
+
+            user_anime_list = {"username": username, "anime_list": []}
+            anime_list_data = anime_list_request.json().get('data')
+            if anime_list_data is not None:
+                for node in anime_list_data:
+                    user_anime_list["anime_list"].append({"anime": node["node"], "list_status": node["list_status"]})
+
+            while anime_list_request.json()['paging'].get('next') is not None:
+                time.sleep(API_REQUEST_DELAY * 2)
+                
+                anime_list_data = anime_list_request.json().get('data')
+                if anime_list_data is not None:
+                    for node in anime_list_data:
+                        user_anime_list["anime_list"].append({"anime": node["node"], "list_status": node["list_status"]})
+                
+                # Get Next 1000 Anime if Available
+                if anime_list_request.json()['paging'].get('next') is not None:
+                    anime_list_request = requests.get(f'{anime_list_request.json()["paging"].get("next")}&fields=list_status', headers={'X-MAL-CLIENT-ID': CLIENT_ID})
+
+            anime_lists.append(user_anime_list)
+            print(f'Found {username}\'s anime list. They watched {len(user_anime_list["anime_list"])} anime...')
+        except:
+            print(f"Exception occured when trying to perform user anime list request with: {anime_list_request.status_code}")
+
+    print("Found every user's anime list...")
+
+    return {
+        "anime_lists": anime_lists
+    }
+
+def print_num_anime_in_anime_lists(json_file):
+    anime_lists = []
+    with open(json_file, 'r') as file:
+        json_data = json.load(file)
+        anime_lists = json_data["anime_lists"]
+    
+    for ind, anime_list in enumerate(anime_lists):
+        print(f'{ind+1}. {anime_list["username"]} watched {len(anime_list["anime_list"])} anime.')
+
 def write_json_to_file(data, filename):
     json_data = json.dumps(data, indent=4)
 
@@ -86,3 +139,9 @@ def write_json_to_file(data, filename):
 
 # Uncomment to Collect a List of Usernames from the Jikan API
 #write_json_to_file(collect_usernames(), 'data/usernames.json')
+
+# Uncomment to Collect a List of User Anime List Data (Requires data/usernames.json file)
+#write_json_to_file(collect_anime_lists('data/usernames.json'), 'data/user_anime_lists.json')
+
+# Uncomment to Print out How Many Anime Each User Has Watched (Requires data/user_anime_lists.json)
+print_num_anime_in_anime_lists("data/user_anime_lists.json")
