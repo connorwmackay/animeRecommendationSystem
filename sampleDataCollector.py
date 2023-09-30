@@ -4,6 +4,15 @@ import os
 import time
 from dotenv import load_dotenv
 
+"""
+This script collects data on every anime (since you can get 500 per request) and
+dumps the data into a JSON file.
+
+Additionally, this script will collect the user lists of a small number of users,
+since collecting data on a user is fairly time-consuming. Though the number of users
+can be configured.
+"""
+
 load_dotenv()
 
 CLIENT_ID = os.getenv('CLIENT_ID') # An ID needed to authenticate requests to the API
@@ -43,11 +52,37 @@ def collect_anime_data():
         "anime": collected_anime
     }
 
-def write_collected_anime_to_json_file():
-    collected_anime_json = json.dumps(collect_anime_data(), indent=4)
+# Roughly 20 usernames per page
+def collect_usernames(num_pages=25):
+    usernames = []
 
-    with open('data/anime.json', "w") as json_file:
-        json_file.write(collected_anime_json)
+    for page_num in range(1, num_pages+1):
+        users_request: requests.Response = None
+        try:
+            users_request = requests.get(f'https://api.jikan.moe/v4/users?page={page_num}')
+            time.sleep(API_REQUEST_DELAY)
+            
+            for user in users_request.json()['data']:
+                usernames.append(user['username'])
+            
+            print("Collected next page of usernames...")
+        except:
+            print(f"Exception occured when trying to perform user request: {users_request.json()}")
+
+    print("Collected all usernames..")
+
+    return {
+        "usernames": usernames
+    }
+
+def write_json_to_file(data, filename):
+    json_data = json.dumps(data, indent=4)
+
+    with open(filename, "w") as json_file:
+        json_file.write(json_data)
 
 # Uncomment to Collect Data on Every Anime Available on MyAnimeList
-#write_collected_anime_to_json_file()
+#write_json_to_file(collect_anime_data(), 'data/anime.json')
+
+# Uncomment to Collect a List of Usernames from the Jikan API
+#write_json_to_file(collect_usernames(), 'data/usernames.json')
