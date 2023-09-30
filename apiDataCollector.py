@@ -144,4 +144,4 @@ def write_json_to_file(data, filename):
 #write_json_to_file(collect_anime_lists('data/usernames.json'), 'data/user_anime_lists.json')
 
 # Uncomment to Print out How Many Anime Each User Has Watched (Requires data/user_anime_lists.json)
-print_num_anime_in_anime_lists("data/user_anime_lists.json")
+#print_num_anime_in_anime_lists("data/user_anime_lists.json")
