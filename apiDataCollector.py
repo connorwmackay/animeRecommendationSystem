@@ -1,17 +1,17 @@
+"""
+This script collects data on every anime (since you can get 500 per request) and
+dumps the data into a JSON file.
+
+Additionally, this script will collect the usernames of a number of users
+(20 for every page you choose to request). These usernames can then be used
+to request the anime list of each user in the username list.
+"""
+
 import requests
 import json
 import os
 import time
 from dotenv import load_dotenv
-
-"""
-This script collects data on every anime (since you can get 500 per request) and
-dumps the data into a JSON file.
-
-Additionally, this script will collect the user lists of a small number of users,
-since collecting data on a user is fairly time-consuming. Though the number of users
-can be configured.
-"""
 
 load_dotenv()
 
