@@ -53,7 +53,7 @@ def collect_anime_data():
     }
 
 # Roughly 20 usernames per page
-def collect_usernames(num_pages=25):
+def collect_usernames(num_pages=100):
     usernames = []
 
     for page_num in range(1, num_pages+1):
@@ -84,10 +84,10 @@ def collect_anime_lists(json_file):
 
     anime_lists = []
 
-    for username in usernames:
+    for ind, username in enumerate(usernames):
         anime_list_request: requests.Response = None
         try:
-            anime_list_request = requests.get(f'{MY_ANIME_LIST_API_URL}/users/{username}/animelist?fields=list_status&status=completed&limit=1000', headers={'X-MAL-CLIENT-ID': CLIENT_ID})
+            anime_list_request = requests.get(f'{MY_ANIME_LIST_API_URL}/users/{username}/animelist?fields=list_status&limit=1000', headers={'X-MAL-CLIENT-ID': CLIENT_ID})
             time.sleep(API_REQUEST_DELAY * 2)
 
             user_anime_list = {"username": username, "anime_list": []}
@@ -109,7 +109,7 @@ def collect_anime_lists(json_file):
                     anime_list_request = requests.get(f'{anime_list_request.json()["paging"].get("next")}&fields=list_status', headers={'X-MAL-CLIENT-ID': CLIENT_ID})
 
             anime_lists.append(user_anime_list)
-            print(f'Found {username}\'s anime list. They watched {len(user_anime_list["anime_list"])} anime...')
+            print(f'{ind+1}. Found {username}\'s anime list. They watched {len(user_anime_list["anime_list"])} anime...')
         except:
             print(f"Exception occured when trying to perform user anime list request with: {anime_list_request.status_code}")
 
@@ -139,7 +139,7 @@ if __name__ == '__main__':
     write_json_to_file(collect_anime_data(), 'data/anime.json')
 
     # Collect a List of Usernames from the Jikan API
-    write_json_to_file(collect_usernames(), 'data/usernames.json')
+    write_json_to_file(collect_usernames(num_pages=500), 'data/usernames.json')
 
     # Collect a List of User Anime List Data (Requires data/usernames.json file)
     write_json_to_file(collect_anime_lists('data/usernames.json'), 'data/user_anime_lists.json')

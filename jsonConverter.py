@@ -80,12 +80,13 @@ def convert_user_anime_list_json_to_csv():
     # Append each anime rating from a user as an individual row in a CSV file
     with open('data/user_ratings.csv', 'w', newline='\n', encoding="utf-8") as csv_file:
         ratings_writer = csv.writer(csv_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-        ratings_writer.writerow(["user_id", "anime_id", "score", "updated_at", "start_date", "finish_date"])
+        ratings_writer.writerow(["user_id", "anime_id", "score", "status", "num_episodes_watched", "updated_at", "start_date", "finish_date"])
 
         user_id = 0
         for user_anime_list in user_anime_lists:
             for anime_rating in user_anime_list["anime_list"]:
                 ratings_writer.writerow([user_id, anime_rating["anime"]["id"], anime_rating["list_status"]["score"],
+                                         anime_rating["list_status"].get("status"), anime_rating["list_status"].get("num_episodes_watched"),
                                          anime_rating["list_status"]["updated_at"], anime_rating["list_status"].get("start_date"),
                                          anime_rating["list_status"].get("finish_date")])
             user_id += 1
@@ -106,3 +107,4 @@ if __name__ == '__main__':
     user_ratings_df = pd.read_csv('data/user_ratings.csv')
     print(user_ratings_df.sample(n=5))
     print(user_ratings_df.describe())
+    print(user_ratings_df.query('status == "dropped"').describe())
