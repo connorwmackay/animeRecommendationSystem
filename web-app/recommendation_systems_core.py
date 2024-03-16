@@ -5,11 +5,11 @@ from sklearn.metrics.pairwise import cosine_distances, euclidean_distances, manh
 from sklearn.feature_extraction.text import TfidfVectorizer
 import os
 
-anime_df = pd.read_csv('./data/anime.csv')
-train_df = pd.read_csv('data/user_ratings_train.csv')
-test_df = pd.read_csv('data/user_ratings_test.csv')
-new_users_train_df = pd.read_csv('data/new_user_ratings_train.csv')
-new_users_test_df = pd.read_csv('data/new_user_ratings_test.csv')
+anime_df = pd.read_csv('../data/anime.csv')
+train_df = pd.read_csv('../data/user_ratings_train.csv')
+test_df = pd.read_csv('../data/user_ratings_test.csv')
+new_users_train_df = pd.read_csv('../data/new_user_ratings_train.csv')
+new_users_test_df = pd.read_csv('../data/new_user_ratings_test.csv')
 
 for user_id in new_users_train_df.user_id.unique():
     num_anime_watched = len(new_users_test_df[new_users_test_df.user_id == user_id])
@@ -34,29 +34,12 @@ def manhattan_distance_metric(user_profile, anime_vector_df):
 
 from sklearn.metrics import DistanceMetric
 
-def avg_min_distance_evaluation(anime_watched, predicted_anime, distance_metric='minkowski'):
-    min_distances = []
-    
-    distance = DistanceMetric.get_metric(distance_metric)
-    
-    # Get the minimum distance for each predicted anime
-    for prediction in predicted_anime:
-        prediction_distances = distance.pairwise(np.array([prediction]).reshape((1, -1)), anime_watched).reshape(-1)
-
-        if len(prediction_distances) > 0:
-            min_distances.append(min(prediction_distances))
-        else:
-            print(f"Warning. User {user_id} with {len(prediction)} predictions and watched {len(anime_watched)} anime, had zero prediction min distances.")
-        
-    # Get the average minimum distance of the minimum prediction distances
-    average_min_distance = sum(min_distances) / len(min_distances)
-    return average_min_distance
-
 import math
 
 def score_recommendations(num_recommendations, recommendations, user_ratings, anime_vector_df, distance_relevant_cutoff = 0.35):
     score = {
-        "average_precision": 0,
+        "hit_rate": 0, # Number of hits / number of users
+        "average_precision": 0, # Number of relevant recommendations / number of recommendations
     }
     
     num_not_scored = 0
@@ -65,22 +48,15 @@ def score_recommendations(num_recommendations, recommendations, user_ratings, an
     unique_user_ids = recommendations.keys()
     for user_id in unique_user_ids:
         num_scored += 1
-        predicted_anime = recommendations[user_id]["prediction_vectors"]
 
-        # Get the no. of relevant anime
+        # Get the User's Test Ratings
         user_ratings_inst = user_ratings[user_ratings.user_id == int(user_id)]
         if len(user_ratings_inst) == 0:
             print(f"Error. No user with id {user_id} was found.")
-            
-        average_rating = round(np.average(user_ratings_inst['score']))
-        num_relevant_anime = len(user_ratings_inst[user_ratings_inst.score >= average_rating])
-
-        if num_relevant_anime == 0:
-            print("Error. No relavent anime. Average Rating:", average_rating)
-            print(f"Min Rating: {min(user_ratings_inst['score'])}, Max Rating: {max(user_ratings_inst['score'])}")
-
-        # Get the no. of relevant recommendations
+        
+        # Get The Number of Relevant Recommendations
         num_relevant_recommendations = 0
+        predicted_anime = recommendations[user_id]["prediction_vectors"]
         for prediction in predicted_anime:
             prediction_distances = cosine_distances(np.array([prediction]).reshape((1, -1)), recommendations[int(user_id)]["actual_anime_vectors"]).reshape(-1)
             if len(prediction_distances) > 0:
@@ -89,12 +65,28 @@ def score_recommendations(num_recommendations, recommendations, user_ratings, an
                     num_relevant_recommendations += 1
             else:
                 print(f"Warning. User {user_id} had no prediction distances")
-
-        score["average_precision"] += num_relevant_recommendations / num_recommendations
     
+        # Get the Number of Hits
+        num_hits = 0
+        if type(recommendations[int(user_id)]["predictions"]) is list:
+            num_hits = len(user_ratings_inst.loc[user_ratings_inst.anime_id.isin(recommendations[int(user_id)]["predictions"])])
+        else:
+            num_hits = len(user_ratings_inst.loc[user_ratings_inst.anime_id.isin(recommendations[int(user_id)]["predictions"].index)])
+                
+        score["average_precision"] += num_relevant_recommendations / num_recommendations
+        score["hit_rate"] += num_hits
+   
     score["average_precision"] /= num_scored
+    score["hit_rate"] /= num_scored
+    
     print(f"Num Users Not Scored: {num_not_scored}")
+    
     return score
+
+# # Create the Recommender Systems
+# This will include a Content-Based Filtering, Collaborative Filtering and Hybrid System.
+
+# ## Create the Content-Based Filtering Recommender
 
 from sklearn.metrics import mean_squared_error
 
@@ -204,6 +196,10 @@ class CBFRecommender:
     # Make recommendations for every user
     def make_recommendations(self, testing_df: pd.DataFrame, num_recommendations=20, distance_metric='cosine'):
         unique_user_ids = self.user_ratings_data['user_id'].unique()
+        
+        # Only use users that are in the testing dataframe
+        unique_user_ids = testing_df.loc[testing_df.user_id.isin(unique_user_ids)].user_id.unique()
+        
         recommendations = {}
 
         for user_id in unique_user_ids:
@@ -247,6 +243,9 @@ class CBFRecommender:
         score = score_recommendations(num_recommendations, recommendations, testing_df, self.anime_vector_df)
         
         return score
+
+
+# ## Create the Collaborative Filtering Recommender
 
 import os
 
@@ -364,6 +363,8 @@ class CollaborativeFilteringRecommender:
         
         return score
 
+
+# ## Create the Hybrid Recommender
 class HybridRecommender:
     def __init__(self, anime_data: pd.DataFrame, user_ratings_data: pd.DataFrame, cbf_distance_metric='cosine'):
         self.cbf_recommender = CBFRecommender(anime_data, user_ratings_data)
@@ -400,6 +401,9 @@ class HybridRecommender:
         user_top_anime_df = user_combined_scores_df.iloc[:num_recommendations]
         
         return user_top_anime_df
+    
+    def get_user_anime_recommendations_df(self, user_top_anime_df):
+        return anime_df[anime_df.id.isin(user_top_anime_df.id)]
     
     def make_recommendations(self, num_recommendations, test_ratings_df, anime_vector_df):
         recommendations = {}

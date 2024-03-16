@@ -15,18 +15,19 @@ def get_recommender(file_name):
     recommender_file.close()
     return recommender
 
-cbf_recommender = get_recommender('data/cbf_recommender')
-new_cbf_recommender = get_recommender('data/new_cbf_recommender')
+cbf_recommender = get_recommender('../data/cbf_recommender')
+new_cbf_recommender = get_recommender('../data/new_cbf_recommender')
 
-collaborative_recommender = get_recommender('data/collaborative_recommender')
-new_collaborative_recommender = get_recommender('data/new_collaborative_recommender')
+collaborative_recommender = get_recommender('../data/collaborative_recommender')
+new_collaborative_recommender = get_recommender('../data/new_collaborative_recommender')
 
-hybrid_recommender = get_recommender('data/hybrid_recommender')
-new_hybrid_recommender = get_recommender('data/new_hybrid_recommender')
+hybrid_recommender = get_recommender('../data/hybrid_recommender')
+new_hybrid_recommender = get_recommender('../data/new_hybrid_recommender')
 
 print("Finished getting recommenders...")
 
-st.title("Anime Recommenders App")
+st.markdown("# User Recommendations")
+st.sidebar.markdown("# User Recommendations")
 
 container = st.container(border=True)
 recommender_option = container.selectbox(
@@ -130,7 +131,10 @@ def show_cf_results():
 
 def show_hybrid_results():
     recommendation_results = recommender.recommend_user(user_id, n_recommendations)
-    st.table(recommendation_results)
+    results = recommender.get_user_anime_recommendations_df(recommendation_results)
+    results["synopsis"] = results["synopsis"].str[:100] + "..."
+
+    st.table(results)
 
 if recommender_option == "Collaborative Filtering Recommender (New Users)" or recommender_option == "Collaborative Filtering Recommender (Normal Users)":
     show_cf_results()
