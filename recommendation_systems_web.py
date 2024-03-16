@@ -67,16 +67,16 @@ if recommender_option == "Content-Based Filtering Recommender (Normal Users)":
 elif recommender_option == "Content-Based Filtering Recommender (New Users)":
     is_normal_user = False
     recommender = new_cbf_recommender
-elif recommender == "Collaborative Filtering Recommender (Normal Users)":
+elif recommender_option == "Collaborative Filtering Recommender (Normal Users)":
     is_normal_user = True
     recommender = collaborative_recommender
-elif recommender == "Collaborative Filtering Recommender (New Users)":
+elif recommender_option == "Collaborative Filtering Recommender (New Users)":
     is_normal_user = False
     recommender = new_collaborative_recommender
-elif recommender == "Hyrbid Recommender (Normal Users)":
+elif recommender_option == "Hyrbid Recommender (Normal Users)":
     is_normal_user = True
     recommender = hybrid_recommender
-elif recommender == "Hyrbid Recommender (New Users)":
+elif recommender_option == "Hyrbid Recommender (New Users)":
     is_normal_user = False
     recommender = new_hybrid_recommender
 
@@ -106,13 +106,35 @@ n_recommendations = 5
 if num_recommendations_input != "":
     n_recommendations = int(num_recommendations_input)
 
-recommendation_results = recommender.recommend_user(user_id, n_recommendations)
-recommendation_results["synopsis"] = recommendation_results["synopsis"].str[:100] + "..."
+def show_cbf_results():
+    recommendation_results = recommender.recommend_user(user_id, n_recommendations)
 
-if 'combined' in recommendation_results:
-    recommendation_results.drop("combined", axis='columns', inplace=True)
+    if 'synopsis' in recommendation_results:
+        recommendation_results["synopsis"] = recommendation_results["synopsis"].str[:100] + "..."
 
-if 'distance' in recommendation_results:
-    recommendation_results.drop("distance", axis='columns', inplace=True)
+    if 'combined' in recommendation_results:
+        recommendation_results.drop("combined", axis='columns', inplace=True)
 
-st.table(recommendation_results)
+    if 'distance' in recommendation_results:
+        recommendation_results.drop("distance", axis='columns', inplace=True)
+
+    st.table(recommendation_results)
+
+def show_cf_results():
+    recommendation_results = recommender.recommend_user(recommender.cf_trainset.to_inner_uid(user_id), n_recommendations)
+
+    results = recommender.get_user_recommendations_df(recommendation_results)
+    results["synopsis"] = results["synopsis"].str[:100] + "..."
+    
+    st.table(results)
+
+def show_hybrid_results():
+    recommendation_results = recommender.recommend_user(user_id, n_recommendations)
+    st.table(recommendation_results)
+
+if recommender_option == "Collaborative Filtering Recommender (New Users)" or recommender_option == "Collaborative Filtering Recommender (Normal Users)":
+    show_cf_results()
+elif recommender_option == "Hyrbid Recommender (Normal Users)" or recommender_option == "Hyrbid Recommender (New Users)":
+    show_hybrid_results()
+else: # Content-Based Recommender
+   show_cbf_results()
