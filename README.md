@@ -17,4 +17,9 @@ CLIENT_ID=<MY ANIME LIST API CLIENT ID>
 ```
 
 ## Using the Streamlit Web App
-Run `streamlit run web-app/main_page.py` to access the streamlit app. You will need to run the RecommendationSystems Jupyter Notebook at least once so the relevant files are saved to the data folder before running the streamlit app.
+Run the following commands to start the web app:
+```
+cd web-app
+streamlit run main_page.py
+``` 
+You will need to run the RecommendationSystems Jupyter Notebook at least once so the relevant files are saved to the data folder before running the streamlit app.

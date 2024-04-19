@@ -36,57 +36,12 @@ from sklearn.metrics import DistanceMetric
 
 import math
 
-def score_recommendations(num_recommendations, recommendations, user_ratings, anime_vector_df, distance_relevant_cutoff = 0.35):
-    score = {
-        "hit_rate": 0, # Number of hits / number of users
-        "average_precision": 0, # Number of relevant recommendations / number of recommendations
-    }
-    
-    num_not_scored = 0
-    num_scored = 0
-    
-    unique_user_ids = recommendations.keys()
-    for user_id in unique_user_ids:
-        num_scored += 1
-
-        # Get the User's Test Ratings
-        user_ratings_inst = user_ratings[user_ratings.user_id == int(user_id)]
-        if len(user_ratings_inst) == 0:
-            print(f"Error. No user with id {user_id} was found.")
-        
-        # Get The Number of Relevant Recommendations
-        num_relevant_recommendations = 0
-        predicted_anime = recommendations[user_id]["prediction_vectors"]
-        for prediction in predicted_anime:
-            prediction_distances = cosine_distances(np.array([prediction]).reshape((1, -1)), recommendations[int(user_id)]["actual_anime_vectors"]).reshape(-1)
-            if len(prediction_distances) > 0:
-                distance = min(prediction_distances)
-                if distance <= distance_relevant_cutoff:
-                    num_relevant_recommendations += 1
-            else:
-                print(f"Warning. User {user_id} had no prediction distances")
-    
-        # Get the Number of Hits
-        num_hits = 0
-        if type(recommendations[int(user_id)]["predictions"]) is list:
-            num_hits = len(user_ratings_inst.loc[user_ratings_inst.anime_id.isin(recommendations[int(user_id)]["predictions"])])
-        else:
-            num_hits = len(user_ratings_inst.loc[user_ratings_inst.anime_id.isin(recommendations[int(user_id)]["predictions"].index)])
-                
-        score["average_precision"] += num_relevant_recommendations / num_recommendations
-        score["hit_rate"] += num_hits
-   
-    score["average_precision"] /= num_scored
-    score["hit_rate"] /= num_scored
-    
-    print(f"Num Users Not Scored: {num_not_scored}")
-    
-    return score
-
 # # Create the Recommender Systems
 # This will include a Content-Based Filtering, Collaborative Filtering and Hybrid System.
 
 # ## Create the Content-Based Filtering Recommender
+
+from sklearn.metrics import mean_squared_error
 
 from sklearn.metrics import mean_squared_error
 
@@ -104,7 +59,7 @@ class CBFRecommender:
         vectorizer = TfidfVectorizer(stop_words=stop_words, max_features=max_features, max_df=max_df, min_df=min_df)
         self.anime_df['combined'] =  self.anime_df['genres'] + " " + self.anime_df['synopsis']
 
-        anime_features_vector_matrix = vectorizer.fit_transform(self.anime_df['combined'])
+        anime_features_vector_matrix = vectorizer.fit_transform(self.anime_df['genres'])
 
         self.anime_vector_df = pd.DataFrame(data=anime_features_vector_matrix.toarray())
         self.anime_vector_df['anime_id'] = self.anime_df['id']
@@ -119,13 +74,7 @@ class CBFRecommender:
 
         # Prefer to only use anime they rated higher than their avg. rating
         average_rating = np.average(users_ratings_df['score'])
-        selected_user_ratings_df = users_ratings_df[users_ratings_df.score > average_rating]
-
-        # If the user hasn't rated any anime higher than thier avg.,
-        # then use the median instead
-        if selected_user_ratings_df.empty:
-            average_rating = np.average(users_ratings_df['score'])
-            selected_user_ratings_df = users_ratings_df[users_ratings_df.score >= average_rating]
+        selected_user_ratings_df = users_ratings_df[users_ratings_df.score >= average_rating]
 
         # Get the Anime they rated highly
         user_anime_rated_df = self.anime_df[self.anime_df.id.isin(selected_user_ratings_df['anime_id'])]
@@ -192,6 +141,51 @@ class CBFRecommender:
         user_scores_df = self.get_user_anime_distance(user_id, distance_metric=distance_metric)
         user_scores_df = user_scores_df.rename(columns={"distance": "score"})
         return user_scores_df
+
+    # Evaluate the effectiveness of this recommender
+    def evaluate(self, num_recommendations: int, testing_df: pd.DataFrame, distance_metric='cosine'):
+        unique_user_ids = self.user_ratings_data['user_id'].unique()
+        
+        # Only use users that are in the testing dataframe
+        unique_user_ids = testing_df.loc[testing_df.user_id.isin(unique_user_ids)].user_id.unique()
+        
+        hits = 0
+        mean_reciprocal_rank_sum = 0
+
+        # Loop through each user
+        for user_id in unique_user_ids:
+            # Get that user's recommendations
+            user_recommendations = self.recommend_user(user_id, num_recommendations, distance_metric=distance_metric)
+
+            # Get the anime they rated in the testing dataset
+            user_testing_anime_df = testing_df.loc[testing_df.user_id == user_id]
+
+            # Get the number of hits for the user in the testing dataset
+            user_num_hits = len(user_testing_anime_df.loc[user_testing_anime_df.anime_id.isin(user_recommendations.id)]['anime_id'])
+            
+            # If There Was a Hit, Add to the Total Hits
+            if user_num_hits > 0:
+                # Increase the overall number of hits
+                hits += 1
+
+                # Determine where in the list the first hit was
+                idx = 0
+                first_hit_index = 0
+                for anime_id in user_recommendations.id:
+                    # Is this anime in the user's test ratings?
+                    if np.any(user_testing_anime_df.anime_id.values[:] == anime_id):
+                        # Set this as the rank and break out of this loop
+                        first_hit_index = idx
+                        break
+                    
+                    # Iterate the index
+                    idx += 1
+
+                # Calulate the mean reciprocal rank
+                mrr = 1 / (first_hit_index + 1)
+                mean_reciprocal_rank_sum += mrr
+        
+        return { "hit_rate": hits / len(unique_user_ids), "mean_reciprocal_rank": mean_reciprocal_rank_sum / len(unique_user_ids)}
     
     # Make recommendations for every user
     def make_recommendations(self, testing_df: pd.DataFrame, num_recommendations=20, distance_metric='cosine'):
@@ -218,31 +212,6 @@ class CBFRecommender:
                 print("Warning. Not enought anime vectors.")
 
         return recommendations
-    
-    # Test How Effective the Model
-    def test_recommendations(self, testing_df: pd.DataFrame, num_recommendations=20, distance_metric='cosine', evaluation_distance_metric='cosine'):
-        recommendations = self.make_recommendations(testing_df, num_recommendations=num_recommendations, distance_metric=distance_metric)
-        
-        # Temp: Compare recommendations IDs to testing IDs
-        recommendations_users = recommendations.keys()
-        testing_users = testing_df.user_id.unique()
-        
-        ids_not_in_both = []
-        for ruid in recommendations_users:
-            not_in_both = True
-            for tuid in testing_users:
-                if ruid == tuid:
-                    not_in_both = False
-            
-            if not_in_both:
-                ids_not_in_both.append(ruid)
-        
-        print("IDs not in both: ")
-        print(ids_not_in_both)
-        
-        score = score_recommendations(num_recommendations, recommendations, testing_df, self.anime_vector_df)
-        
-        return score
 
 
 # ## Create the Collaborative Filtering Recommender
@@ -336,6 +305,40 @@ class CollaborativeFilteringRecommender:
         
         return user_recommendations
     
+    def evaluate(self, num_recommendations: int, testing_df: pd.DataFrame):
+        hits = 0
+        mean_reciprocal_rank_sum = 0
+
+        for inner_userid in self.cf_trainset.all_users():
+            user_id = self.cf_trainset.to_raw_uid(inner_userid)
+            user_recommendations = self.recommend_user(inner_userid, num_recommendations)
+            
+            user_testing_anime_df = testing_df.loc[testing_df.user_id == user_id]
+            user_num_hits = len(user_testing_anime_df.loc[user_testing_anime_df.anime_id.isin(user_recommendations)]['anime_id'])
+            
+            if user_num_hits > 0:
+                # Increase the overall number of hits
+                hits += 1
+        
+                # Determine where in the list the first hit was
+                idx = 0
+                first_hit_index = 0
+                for anime_id in user_recommendations:
+                    # Is this anime in the user's test ratings?
+                    if np.any(user_testing_anime_df.anime_id.values[:] == anime_id):
+                        # Set this as the rank and break out of this loop
+                        first_hit_index = idx
+                        break
+                    
+                    # Iterate the index
+                    idx += 1
+
+                # Calulate the mean reciprocal rank
+                mrr = 1 / (first_hit_index + 1)
+                mean_reciprocal_rank_sum += mrr
+        
+        return {"hit_rate": hits / len(self.cf_trainset.all_users()), "mean_reciprocal_rank": mean_reciprocal_rank_sum / len(self.cf_trainset.all_users())}
+    
     def get_user_recommendations_df(self, user_recommendations: list):
         return anime_df[anime_df.id.isin(user_recommendations)]
     
@@ -356,12 +359,6 @@ class CollaborativeFilteringRecommender:
                                             "prediction_vectors": predicted_anime_vectors.to_numpy()}
         
         return recommendations
-    
-    def test_recommendations(self, num_recommendations, test_ratings_df, anime_vector_df, evaluation_distance_metric='cosine'):
-        recommendations = self.make_recommendations(num_recommendations, test_ratings_df, anime_vector_df)
-        score = score_recommendations(num_recommendations, recommendations, test_ratings_df, anime_vector_df)
-        
-        return score
 
 
 # ## Create the Hybrid Recommender
@@ -405,6 +402,50 @@ class HybridRecommender:
     def get_user_anime_recommendations_df(self, user_top_anime_df):
         return anime_df[anime_df.id.isin(user_top_anime_df.id)]
     
+    def evaluate(self, num_recommendations: int, testing_df: pd.DataFrame):
+        unique_user_ids = self.user_ratings_data['user_id'].unique()
+        
+        # Only use users that are in the testing dataframe
+        unique_user_ids = testing_df.loc[testing_df.user_id.isin(unique_user_ids)].user_id.unique()
+        
+        hits = 0
+        mean_reciprocal_rank_sum = 0
+
+        # Loop through each user
+        for user_id in unique_user_ids:
+            # Get that user's recommendations
+            user_recommendations = self.recommend_user(user_id, num_recommendations)
+
+            # Get the anime that user rated from the testing dataset
+            user_testing_anime_df = testing_df.loc[testing_df.user_id == user_id]
+
+            # Get the number of the user's hits from the testing dataset
+            user_num_hits = len(user_testing_anime_df.loc[user_testing_anime_df.anime_id.isin(user_recommendations.id)]['anime_id'])
+           
+             # If There Was a Hit, Add to the Total Hits
+            if user_num_hits > 0:
+                # Increase the overall number of hits
+                hits += 1
+
+                # Determine where in the list the first hit was
+                idx = 0
+                first_hit_index = 0
+                for anime_id in user_recommendations.id:
+                    # Is this anime in the user's test ratings?
+                    if np.any(user_testing_anime_df.anime_id.values[:] == anime_id):
+                        # Set this as the rank and break out of this loop
+                        first_hit_index = idx
+                        break
+                    
+                    # Iterate the index
+                    idx += 1
+
+                # Calculate the mean reciprocal rank
+                mrr = 1 / (first_hit_index + 1)
+                mean_reciprocal_rank_sum += mrr
+        
+        return { "hit_rate": hits / len(unique_user_ids), "mean_reciprocal_rank": mean_reciprocal_rank_sum / len(unique_user_ids)}
+    
     def make_recommendations(self, num_recommendations, test_ratings_df, anime_vector_df):
         recommendations = {}
         unique_user_ids = self.user_ratings_data['user_id'].unique()
@@ -419,9 +460,3 @@ class HybridRecommender:
                                             "prediction_vectors": predicted_anime_vectors.to_numpy()}
         
         return recommendations
-    
-    def test_recommendations(self, num_recommendations, test_user_ratings_data: pd.DataFrame, anime_vector_df, evaluation_distance_metric='cosine'):
-        recommendations = self.make_recommendations(num_recommendations, test_user_ratings_data, anime_vector_df)
-        score = score_recommendations(num_recommendations, recommendations, test_user_ratings_data, anime_vector_df)
-        
-        return score

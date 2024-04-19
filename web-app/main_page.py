@@ -8,6 +8,8 @@ import numpy as np
 
 print("Started getting recommenders...")
 
+st.set_page_config(layout="wide")
+
 @st.cache_data()
 def get_recommender(file_name):
     recommender_file = open(file_name, 'rb')
