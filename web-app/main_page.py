@@ -36,7 +36,7 @@ recommender_option = container.selectbox(
     "Which recommender would you like to use?",
     ("Content-Based Filtering Recommender (Normal Users)", "Content-Based Filtering Recommender (New Users)",
      "Collaborative Filtering Recommender (Normal Users)", "Collaborative Filtering Recommender (New Users)",
-     "Hyrbid Recommender (Normal Users)", "Hyrbid Recommender (New Users)"
+     "Hybrid Recommender (Normal Users)", "Hybrid Recommender (New Users)"
      ),
      index=0,
 )
@@ -60,7 +60,7 @@ def get_user_id_from_text(user_id_input: str, is_normal_user=True):
                 return u_id
     
     return None
-
+   
 recommender = cbf_recommender
 is_normal_user = True
 
@@ -76,34 +76,26 @@ elif recommender_option == "Collaborative Filtering Recommender (Normal Users)":
 elif recommender_option == "Collaborative Filtering Recommender (New Users)":
     is_normal_user = False
     recommender = new_collaborative_recommender
-elif recommender_option == "Hyrbid Recommender (Normal Users)":
+elif recommender_option == "Hybrid Recommender (Normal Users)":
     is_normal_user = True
     recommender = hybrid_recommender
-elif recommender_option == "Hyrbid Recommender (New Users)":
+elif recommender_option == "Hybrid Recommender (New Users)":
     is_normal_user = False
     recommender = new_hybrid_recommender
 
 num_recommendations_input = container.text_input("Enter Number of Recommendations")
 
-user_id = get_random_user(is_normal_user=True)
 user_id_input = container.text_input("Enter User Id")
 
-if container.button("Pick Random User", type="primary"):
-    user_id_input = ""
-    user_id = get_random_user(is_normal_user=True)
-
+user_id = get_random_user(is_normal_user=is_normal_user)
 user_id_tmp = get_user_id_from_text(user_id_input, is_normal_user=is_normal_user)
+
 if user_id_tmp:
     container.write("Valid user id")
     user_id = user_id_tmp
 elif user_id_input != "":
     container.write(f"{user_id_input} is not a valid user id. A random user id will be used instead.")
     user_id_input = ""
-
-if is_normal_user:
-    st.text(f"Recommendations for User Id: {user_id}")
-else:
-    st.text(f"Recommendations for New User Id: {user_id}")
 
 n_recommendations = 5
 if num_recommendations_input != "":
@@ -138,9 +130,18 @@ def show_hybrid_results():
 
     st.table(results)
 
-if recommender_option == "Collaborative Filtering Recommender (New Users)" or recommender_option == "Collaborative Filtering Recommender (Normal Users)":
-    show_cf_results()
-elif recommender_option == "Hyrbid Recommender (Normal Users)" or recommender_option == "Hyrbid Recommender (New Users)":
-    show_hybrid_results()
-else: # Content-Based Recommender
-   show_cbf_results()
+if user_id_input == "":
+    container.text(f"A random user will be picked since no user id was specified")
+
+if container.button("Get Recommendations", type="primary"):
+    if is_normal_user:
+        st.text(f"Recommendations for User Id: {user_id}")
+    else:
+        st.text(f"Recommendations for New User Id: {user_id}")
+
+    if recommender_option == "Collaborative Filtering Recommender (New Users)" or recommender_option == "Collaborative Filtering Recommender (Normal Users)":
+        show_cf_results()
+    elif recommender_option == "Hybrid Recommender (Normal Users)" or recommender_option == "Hybrid Recommender (New Users)":
+        show_hybrid_results()
+    else: # Content-Based Recommender
+        show_cbf_results()

@@ -34,12 +34,80 @@ def manhattan_distance_metric(user_profile, anime_vector_df):
 
 from sklearn.metrics import DistanceMetric
 
+# Supporting Adding a User's List From MyAnimeList to the User Ratings
+from dotenv import load_dotenv
+import requests
+import time
+
+load_dotenv()
+
+CLIENT_ID = os.getenv('CLIENT_ID') # An ID needed to authenticate requests to the API
+print(f'Client ID: {CLIENT_ID}')
+
+MY_ANIME_LIST_API_URL = 'https://api.myanimelist.net/v2' # The URL of the API that will be called upon
+API_REQUEST_DELAY = 1 # A delay (in seconds) to prevent over-use of the API
+
+def get_users_list(username: str, new_user_id: int):
+    anime_list_request: requests.Response = None
+    
+    try:
+        anime_list_request = requests.get(f'{MY_ANIME_LIST_API_URL}/users/{username}/animelist?fields=list_status&limit=1000', headers={'X-MAL-CLIENT-ID': CLIENT_ID})
+        time.sleep(API_REQUEST_DELAY * 2)
+
+        user_anime_list = {"username": username, "anime_list": []}
+        anime_list_data = anime_list_request.json().get('data')
+        if anime_list_data is not None:
+            for node in anime_list_data:
+                user_anime_list["anime_list"].append({"anime": node["node"], "list_status": node["list_status"]})
+
+        while anime_list_request.json()['paging'].get('next') is not None:
+            time.sleep(API_REQUEST_DELAY * 2)
+            
+            anime_list_data = anime_list_request.json().get('data')
+            if anime_list_data is not None:
+                for node in anime_list_data:
+                    user_anime_list["anime_list"].append({"anime": node["node"], "list_status": node["list_status"]})
+            
+            # Get Next 1000 Anime if Available
+            if anime_list_request.json()['paging'].get('next') is not None:
+                anime_list_request = requests.get(f'{anime_list_request.json()["paging"].get("next")}&fields=list_status', headers={'X-MAL-CLIENT-ID': CLIENT_ID})
+
+        print(f'Found {username}\'s anime list. They watched {len(user_anime_list["anime_list"])} anime...')
+        
+        user_ratings_dict = {
+            "user_id": [],
+            "anime_id": [],
+            "score": []
+        }
+
+        for anime_rating in user_anime_list["anime_list"]:
+
+            if anime_rating["list_status"].get("status") == 'completed':
+                user_ratings_dict["user_id"].append(new_user_id)
+                user_ratings_dict["anime_id"].append(anime_rating["anime"]["id"])
+                user_ratings_dict["score"].append(anime_rating["list_status"]["score"])
+        
+        return pd.DataFrame(data=user_ratings_dict)
+    except:
+        print(f"Exception occured when trying to perform user anime list request with: {anime_list_request.status_code}")
+
+def get_next_user_id(user_ratings_df: pd.DataFrame):
+    next_user_id = max(user_ratings_df.user_id.unique()) + 1
+    return next_user_id
+
+def add_to_user_ratings(user_list_df: pd.DataFrame, user_ratings_df: pd.DataFrame):
+    return pd.concat([user_list_df, user_ratings_df])
+
 import math
 
 # # Create the Recommender Systems
 # This will include a Content-Based Filtering, Collaborative Filtering and Hybrid System.
 
 # ## Create the Content-Based Filtering Recommender
+
+from sklearn.metrics import mean_squared_error
+
+from sklearn.metrics import mean_squared_error
 
 from sklearn.metrics import mean_squared_error
 
@@ -53,12 +121,12 @@ class CBFRecommender:
         self.anime_df.fillna({"synopsis": ""}, inplace=True)
 
         self.user_ratings_data = user_ratings_data
+        self.users_to_ignore_on_evaluation = []
+        self.custom_user_mappings = {} # username: user_id
 
     # Uses TF-IDF to Vectorize the Anime DataFrame
     def vectorize_anime_data(self, stop_words='english', max_features=50, max_df=0.5, min_df=0.01):
         vectorizer = TfidfVectorizer(stop_words=stop_words, max_features=max_features, max_df=max_df, min_df=min_df)
-        self.anime_df['combined'] =  self.anime_df['genres'] + " " + self.anime_df['synopsis']
-
         anime_features_vector_matrix = vectorizer.fit_transform(self.anime_df['genres'])
 
         self.anime_vector_df = pd.DataFrame(data=anime_features_vector_matrix.toarray())
@@ -137,6 +205,20 @@ class CBFRecommender:
 
         return top_similar_anime_df
 
+    # Adds a new user using a MyAnimeList Username
+    def add_new_user_by_mal_username(self, username: str):
+        if username in self.custom_user_mappings:
+            return self.custom_user_mappings[username]
+        
+        user_id = get_next_user_id(self.user_ratings_data)
+        list_df = get_users_list(username, user_id)
+
+        self.user_ratings_data = pd.concat([self.user_ratings_data, list_df])
+        self.users_to_ignore_on_evaluation.append(user_id)
+        self.custom_user_mappings[username] = user_id
+        
+        return user_id
+    
     def get_user_anime_scores(self, user_id, distance_metric='cosine'):
         user_scores_df = self.get_user_anime_distance(user_id, distance_metric=distance_metric)
         user_scores_df = user_scores_df.rename(columns={"distance": "score"})
@@ -144,7 +226,7 @@ class CBFRecommender:
 
     # Evaluate the effectiveness of this recommender
     def evaluate(self, num_recommendations: int, testing_df: pd.DataFrame, distance_metric='cosine'):
-        unique_user_ids = self.user_ratings_data['user_id'].unique()
+        unique_user_ids = testing_df.user_id.unique()
         
         # Only use users that are in the testing dataframe
         unique_user_ids = testing_df.loc[testing_df.user_id.isin(unique_user_ids)].user_id.unique()
@@ -154,6 +236,9 @@ class CBFRecommender:
 
         # Loop through each user
         for user_id in unique_user_ids:
+            if user_id in self.users_to_ignore_on_evaluation:
+                continue # Skip this user
+            
             # Get that user's recommendations
             user_recommendations = self.recommend_user(user_id, num_recommendations, distance_metric=distance_metric)
 
@@ -231,41 +316,35 @@ def convert_user_ratings_to_surprise_dataset(ur_df):
 
 class CollaborativeFilteringRecommender:
     # The algorithm must be Matrix Factorization algorithm supported by surprise
-    def __init__(self, ratings_dataset, mf_algorithm=SVD, performGridsearch=False):
-        self.cf_trainset = ratings_dataset.build_full_trainset()
-        
-        # Set the model as the best model found by the grid search
-        self.cf_model = None
-        
-        # Perform a Grid Search to Hyptertune the Parameters
-        if performGridsearch:
-            param_grid = {"n_factors": [50, 100, 150, 200], "n_epochs": [10, 20, 30], "biased": [True, False]}
-            if mf_algorithm == SVD:
-                param_grid = {"n_factors": [50, 100, 150, 200], "n_epochs": [20, 25, 30], "lr_all": [0.005, 0.0025], "biased": [True, False]}
-            elif mf_algorithm == NMF:
-                param_grid = {"n_factors": [15, 30, 60], "n_epochs": [50, 60, 70], "biased": [True, False]}
-            
-            grid_search = GridSearchCV(mf_algorithm, param_grid, measures=["rmse"], cv=3)
-            grid_search.fit(ratings_dataset)
-            print(f"Best Score for Grid Search was: {grid_search.best_params['rmse']}")
-            print(f"The Best Parameters for Grid Search was: {grid_search.best_score['rmse']}")
-            self.cf_model = grid_search.best_estimator["rmse"]
-        
-        if self.cf_model is None:
-            self.cf_model = mf_algorithm()
+    def __init__(self, ratings_dataset: pd.DataFrame, mf_algorithm=SVD):
+        self.users_to_ignore_on_evaluation = []
+        self.custom_user_mappings = {}
+
+        self.ratings_dataset = ratings_dataset
+        self.cf_trainset = convert_user_ratings_to_surprise_dataset(ratings_dataset)
+        self.cf_trainset = self.cf_trainset.build_full_trainset()
+        self.cf_model = mf_algorithm()
+        self.mf_algorithm = mf_algorithm
        
         self.cf_model.fit(self.cf_trainset)
     
     def get_user_anime_scores(self, user_id: str):
-        # Get every item that this user hasn't watched.
-        item_ids = []
-        for item_id in self.cf_trainset.all_items():
-            if self.cf_trainset.ur.get(item_id) != None:
-                item_ids.append(self.cf_trainset.to_raw_iid(item_id))
+        user_innerid = self.cf_trainset.to_inner_uid(user_id)
+        
+        item_ids = list(self.cf_trainset.all_items()).copy()
+        all_users_rated_items = self.cf_trainset.ur[user_innerid]
+
+        # Remove anime the user has rated
+        for (item_innerid, rating) in all_users_rated_items:
+            try:
+                item_ids.remove(item_innerid)
+            except:
+                continue
         
         # Estimate the rating for each item
         item_predictions = []
-        for item_rawid in item_ids:
+        for item_innerid in item_ids:
+            item_rawid = self.cf_trainset.to_raw_iid(item_innerid)
             prediction = self.cf_model.predict(user_id, item_rawid)
             item_predictions.append(prediction)
     
@@ -282,18 +361,22 @@ class CollaborativeFilteringRecommender:
     
     def recommend_user(self, user_innerid, num_recommendations):
         user_recommendations = []
-        
         user_id = self.cf_trainset.to_raw_uid(user_innerid)
         
-        # Get every item that this user hasn't watched.
-        item_ids = []
-        for item_id in self.cf_trainset.all_items():
-            if self.cf_trainset.ur.get(item_id) != None:
-                item_ids.append(self.cf_trainset.to_raw_iid(item_id))
-        
+        item_ids = list(self.cf_trainset.all_items()).copy()
+        all_users_rated_items = self.cf_trainset.ur[user_innerid]
+
+        # Remove anime the user has rated
+        for (item_innerid, rating) in all_users_rated_items:
+            try:
+                item_ids.remove(item_innerid)
+            except:
+                continue
+                
         # Estimate the rating for each item
         item_predictions = []
-        for item_rawid in item_ids:
+        for item_innerid in item_ids:
+            item_rawid = self.cf_trainset.to_raw_iid(item_innerid)
             prediction = self.cf_model.predict(user_id, item_rawid)
             item_predictions.append(prediction)
         
@@ -304,6 +387,28 @@ class CollaborativeFilteringRecommender:
             user_recommendations.append(prediction.iid)
         
         return user_recommendations
+
+    # Adds a new user using a MyAnimeList Username
+    def add_new_user_by_mal_username(self, username: str):
+        if username in self.custom_user_mappings:
+            return self.custom_user_mappings[username]
+        
+        user_id = get_next_user_id(self.ratings_dataset)
+        list_df = get_users_list(username, user_id)
+        
+        self.users_to_ignore_on_evaluation.append(user_id)
+        self.custom_user_mappings[username] = user_id
+
+        self.ratings_dataset = pd.concat([self.ratings_dataset, list_df])
+        self.cf_trainset = convert_user_ratings_to_surprise_dataset(self.ratings_dataset)
+        self.cf_trainset = self.cf_trainset.build_full_trainset()
+        self.cf_model = self.mf_algorithm()
+        
+        print("Refitting model...")
+        self.cf_model.fit(self.cf_trainset)
+        print("Finished refitting model...")
+              
+        return user_id
     
     def evaluate(self, num_recommendations: int, testing_df: pd.DataFrame):
         hits = 0
@@ -311,6 +416,10 @@ class CollaborativeFilteringRecommender:
 
         for inner_userid in self.cf_trainset.all_users():
             user_id = self.cf_trainset.to_raw_uid(inner_userid)
+
+            if int(user_id) in self.users_to_ignore_on_evaluation:
+                continue # Skip this user
+            
             user_recommendations = self.recommend_user(inner_userid, num_recommendations)
             
             user_testing_anime_df = testing_df.loc[testing_df.user_id == user_id]
@@ -337,7 +446,7 @@ class CollaborativeFilteringRecommender:
                 mrr = 1 / (first_hit_index + 1)
                 mean_reciprocal_rank_sum += mrr
         
-        return {"hit_rate": hits / len(self.cf_trainset.all_users()), "mean_reciprocal_rank": mean_reciprocal_rank_sum / len(self.cf_trainset.all_users())}
+        return {"hit_rate": hits / len(testing_df.user_id.unique()), "mean_reciprocal_rank": mean_reciprocal_rank_sum / len(testing_df.user_id.unique())}
     
     def get_user_recommendations_df(self, user_recommendations: list):
         return anime_df[anime_df.id.isin(user_recommendations)]
@@ -369,9 +478,8 @@ class HybridRecommender:
         self.cbf_distance_metric = cbf_distance_metric
         self.anime_data = anime_data
         self.user_ratings_data = user_ratings_data
-        
-        cf_ratings_data = convert_user_ratings_to_surprise_dataset(user_ratings_data)
-        self.cf_recommender = CollaborativeFilteringRecommender(cf_ratings_data)
+        self.cf_recommender = CollaborativeFilteringRecommender(user_ratings_data)
+        self.users_to_ignore_on_evaluation = []
     
     def get_user_combined_scores(self, user_id):
         # Content-Based Filtering
@@ -379,7 +487,7 @@ class HybridRecommender:
         cbf_scores_df = cbf_scores_df.rename(columns={"score": "cbf_score"})
         
         # Collaborative Filtering
-        cf_scores_df = self.cf_recommender.get_user_anime_scores(str(user_id))    
+        cf_scores_df = self.cf_recommender.get_user_anime_scores(user_id)    
         # Perform Min-Max Normalization
         cf_scores_df["score"] = (cf_scores_df["score"] - cf_scores_df["score"].min()) / (cf_scores_df["score"].max() - cf_scores_df["score"].min())
         cf_scores_df["score"] = (1 - cf_scores_df["score"])
@@ -398,21 +506,35 @@ class HybridRecommender:
         user_top_anime_df = user_combined_scores_df.iloc[:num_recommendations]
         
         return user_top_anime_df
-    
+
+    def add_new_user_by_mal_username(self, username: str):
+        cbf_new_user_id = self.cbf_recommender.add_new_user_by_mal_username(username)
+        cf_new_user_id = self.cf_recommender.add_new_user_by_mal_username(username)
+
+        if cbf_new_user_id != cf_new_user_id:
+            print(f"{cbf_new_user_id} != {cf_new_user_id}")
+
+        self.users_to_ignore_on_evaluation.append(cf_new_user_id)
+
+        return cf_new_user_id
+        
     def get_user_anime_recommendations_df(self, user_top_anime_df):
         return anime_df[anime_df.id.isin(user_top_anime_df.id)]
     
     def evaluate(self, num_recommendations: int, testing_df: pd.DataFrame):
-        unique_user_ids = self.user_ratings_data['user_id'].unique()
+        unique_user_ids = testing_df['user_id'].unique()
         
         # Only use users that are in the testing dataframe
-        unique_user_ids = testing_df.loc[testing_df.user_id.isin(unique_user_ids)].user_id.unique()
+        #unique_user_ids = testing_df.loc[testing_df.user_id.isin(unique_user_ids)].user_id.unique()
         
         hits = 0
         mean_reciprocal_rank_sum = 0
 
         # Loop through each user
         for user_id in unique_user_ids:
+            if user_id in self.users_to_ignore_on_evaluation:
+                continue # Skip this user
+            
             # Get that user's recommendations
             user_recommendations = self.recommend_user(user_id, num_recommendations)
 
