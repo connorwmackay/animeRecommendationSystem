@@ -81,8 +81,7 @@ def get_users_list(username: str, new_user_id: int):
         }
 
         for anime_rating in user_anime_list["anime_list"]:
-
-            if anime_rating["list_status"].get("status") == 'completed':
+            if anime_rating["list_status"].get("status") == 'completed' and anime_df.id.isin([anime_rating["anime"]["id"]]).any():
                 user_ratings_dict["user_id"].append(new_user_id)
                 user_ratings_dict["anime_id"].append(anime_rating["anime"]["id"])
                 user_ratings_dict["score"].append(anime_rating["list_status"]["score"])
