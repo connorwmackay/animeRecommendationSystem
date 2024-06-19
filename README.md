@@ -2,7 +2,7 @@
 A system for recommending anime focused on improving recommendations for new users by creating a hybrid recommendation system. It uses MyAnimeList for the user ratings data and for the anime data.
 
 ## Running the Project
-This project requires Python. There is a file called requirements.txt which can be used to install all the required Python dependencies.
+This project requires Python. Python 3.10 is recommended since there is an issue with the way the Surprise package is setup. There is a file called requirements.txt which can be used to install all the required Python dependencies.
 
 ### Getting the Required Datasets
 #### Downloading the Data Files
